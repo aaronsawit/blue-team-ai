@@ -59,7 +59,7 @@ python blue_team_ai/cli.py --file data/sample_syslog.log --ignore-errors
 ## 🧪 Running Tests
 
 ```bash
-python3 -m pytest -q
+ python3 -m pytest tests/test_parse_logs.py
 ```
 
 ---

@@ -7,6 +7,27 @@ import pytest
 from blue_team_ai.parsers.parse_logs import parse_syslog
 from blue_team_ai.exceptions.unsupported_format import UnsupportedFormat
 
+def test_valid_syslog_line():
+    log = "<34>1 2025-05-15T14:31:02Z host1 sshd 1001 ID123 - Accepted password for user from 192.168.1.1"
+    result = parse_syslog(log)
+    assert result['host'] == "host1"
+    assert result['appname'] == "sshd"
+    assert result['message'].startswith("Accepted password")
+
+def test_malformed_line_raises():
+    bad_log = "<34>1 2025-05-15T14:31Z host1 sshd - - - bad"  # Bad timestamp format
+    with pytest.raises(UnsupportedFormat):
+        parse_syslog(bad_log)
+
+def test_empty_line_raises():
+    with pytest.raises(UnsupportedFormat):
+        parse_syslog("")
+
+def test_malformed_line_raises():
+    bad_log = "<<< totally invalid >>>"
+    with pytest.raises(UnsupportedFormat):
+        parse_syslog(bad_log)
+        
 # Load sample lines
 with open("data/sample_syslog.log", "r") as f:
     SAMPLE_LINES = [line.strip() for line in f if line.strip()]
