@@ -13,7 +13,8 @@ cd blue-team-ai
 
 # Create and activate virtual environment
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate    # Linux/macOS
+# or .venv\Scripts\activate   # Windows
 
 # Install in editable mode
 pip install -e .
@@ -23,25 +24,39 @@ pip install -e .
 
 ## 🚀 Usage
 
-### CLI Mode
-
-Parse a syslog file and print structured JSON output:
+### Exit on first malformed line (default behavior)
 
 ```bash
 python blue_team_ai/cli.py --file data/sample_syslog.log
 ```
 
-Save output to a file:
+### Write to an output file (exit on first malformed line)
 
 ```bash
 python blue_team_ai/cli.py --file data/sample_syslog.log --output output.json
 ```
 
+### Skip malformed lines, logging warnings
+
+```bash
+python blue_team_ai/cli.py --file data/sample_syslog.log --output output.json --ignore-errors
+```
+
+### Skip malformed lines and print valid JSON to stdout
+
+```bash
+python blue_team_ai/cli.py --file data/sample_syslog.log --ignore-errors
+```
+
+**Flags:**
+
+* `-f, --file <FILE>`: Path to the input syslog file (required).
+* `-o, --output <FILE>`: Optional path for the JSON output file. If omitted, results print to stdout.
+* `-i, --ignore-errors`: When set, malformed lines issue a warning and are skipped; otherwise, the first malformed line triggers an error and exit code 1.
+
 ---
 
 ## 🧪 Running Tests
-
-Make sure you're in the virtual environment:
 
 ```bash
 python3 -m pytest -q
@@ -56,14 +71,13 @@ blue-team-ai/
 ├── blue_team_ai/
 │   ├── cli.py                  # Command-line entrypoint
 │   ├── parsers/
-│   │   └── parse_logs.py       # Syslog parser
+│   │   └── parse_logs.py       # Syslog parser logic
 │   └── exceptions/
 │       └── unsupported_format.py
 ├── tests/
 │   └── test_parse_logs.py      # Unit tests for parser
 ├── pyproject.toml              # Project metadata
-├── README.md                   # You're here
-└── .venv/                      # Virtual environment (not committed)
+└── README.md                   # You're here
 ```
 
 ---
@@ -78,4 +92,4 @@ blue-team-ai/
 
 ## 📝 License
 
-This project is licensed under the MIT License.
+MIT © Your Name or Organization

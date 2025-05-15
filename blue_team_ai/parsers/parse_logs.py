@@ -22,27 +22,66 @@ from blue_team_ai.exceptions.unsupported_format import UnsupportedFormat
 
 # Regex for minimal RFC5424 format:
 SYSLOG_REGEX = re.compile(
-    r'^<(?P<pri>\d+)>'              
-    r'(?P<version>\d+) '
-    r'(?P<timestamp>\S+) '
-    r'(?P<host>\S+) '
-    r'(?P<appname>\S+) '
-    r'(?P<procid>\S+) '
-    r'(?P<msgid>\S+) '
-    r'(?P<structured_data>(?:-|\[.*?\])) '
-    r'(?P<message>.*)$'
+    r'^<(?P<pri>\d+)>'                   # Priority
+    r'(?P<version>\d+)\s+'               # Version
+    r'(?P<timestamp>\S+)\s+'             # Timestamp
+    r'(?P<host>\S+)\s+'                  # Hostname
+    r'(?P<appname>\S+)\s+'               # Application name
+    r'(?P<procid>\S+)\s+'                # Process ID
+    r'(?P<msgid>\S+)\s+'                 # Message ID
+    r'(?P<structured_data>(?:-|\[.*?\]))\s+'  # Structured data (or '-')
+    r'(?P<message>.*)$'                  # Message text
 )
 
-def parse_syslog(log_str):
+#!/usr/bin/env python3
+"""
+parse_logs.py — Parse RFC5424-style syslog lines into a dict or raise UnsupportedFormat.
+"""
+
+import re
+import datetime
+
+from blue_team_ai.exceptions.unsupported_format import UnsupportedFormat
+
+# Regex for minimal RFC5424 format:
+#   <PRI>VERSION TIMESTAMP HOST APP PROCID MSGID STRUCTURED-DATA MSG
+SYSLOG_REGEX = re.compile(
+    r'^<(?P<pri>\d+)>'                          # Priority
+    r'(?P<version>\d+) '                        # Version
+    r'(?P<timestamp>\S+) '                      # Timestamp
+    r'(?P<host>\S+) '                           # Hostname
+    r'(?P<appname>\S+) '                        # Application name
+    r'(?P<procid>\S+) '                         # Process ID
+    r'(?P<msgid>\S+) '                          # Message ID
+    r'(?P<structured_data>(?:-|\[.*?\])) '       # Structured data (or '-')
+    r'(?P<message>.*)$'                         # Message text
+)
+
+def parse_syslog(log_str: str) -> dict:
     """
-    Parse a single syslog entry into a dict.
-    Raises UnsupportedFormat if it does not match RFC5424.
+    Parse a single syslog line in RFC5424 format into its components.
+    Raises UnsupportedFormat if the line is not valid.
     """
-    line = log_str.strip()
-    match = SYSLOG_REGEX.match(line)
-    if not match:
-        raise UnsupportedFormat(f"Line does not match syslog RFC5424 format: {line!r}")
-    return match.groupdict()
+    m = SYSLOG_REGEX.match(log_str)
+    if not m:
+        raise UnsupportedFormat(f"Line does not match syslog RFC5424 format: '{log_str}'")
+
+    record = m.groupdict()
+
+    # Only version "1" is supported per RFC5424
+    if record["version"] != "1":
+        raise UnsupportedFormat(f"Unsupported syslog version: '{record['version']}'")
+
+    # Validate timestamp is ISO-8601 (e.g. 2025-05-15T14:31:02Z)
+    ts = record["timestamp"]
+    try:
+        # Replace Z with +00:00 for Python parsing
+        datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        raise UnsupportedFormat(f"Invalid timestamp: '{ts}'")
+
+    return record
+
 
 def main():
     parser = argparse.ArgumentParser(

@@ -9,6 +9,9 @@ authors = [
 ]
 license = { text = "MIT" }
 
+[project.scripts]
+blueai = "blue_team_ai.cli:cli"
+
 [project.urls]
 "Homepage" = "https://github.com/your-username/blue-team-ai"
 

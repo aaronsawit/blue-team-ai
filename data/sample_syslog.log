@@ -1,0 +1,6 @@
+<13>1 2025-05-15T14:31:02Z host1 cron 1002 ID48 - (root) CMD (   cd / && run-parts --report /etc/cron.hourly)
+<34>1 2025-05-15T14:32:03Z server2 sshd 12345 ID47 [exampleSDID@32473 iut="3" eventSource="Application"] User login succeeded
+<11>1 2025-05-15T14:33:10Z web01 nginx 2048 ID99 - GET /index.html 200
+<22>1 2025-05-15T14:34:05Z db-server postgres 5678 ID56 [meta sequenceId="42"] Connection established
+<45>1 2025-05-15T14:35:20Z host3 app 4321 ID22 - Starting scheduled task
+<55>1 2025-05-15T14:36:33Z host4 daemon 7890 ID77 - Completed cleanup process

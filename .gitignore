@@ -9,7 +9,7 @@ __pycache__/
 venv/
 
 # Bytecode and logs
-*.log
+
 *.egg-info/
 *.eggs/
 *.sqlite3
