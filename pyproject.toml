@@ -1,0 +1,18 @@
+[project]
+name = "blue-team-ai"
+version = "0.1.0"
+description = "Blue Team AI Assistant – log parsing, ingestion, and more"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+{ name = "Your Name", email = "you@example.com" }
+]
+license = { text = "MIT" }
+
+[project.urls]
+"Homepage" = "https://github.com/your-username/blue-team-ai"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+

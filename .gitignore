@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+
+# Bytecode and logs
+*.log
+*.egg-info/
+*.eggs/
+*.sqlite3
+
+# Build artifacts
+dist/
+build/
+*.tar.gz
+*.whl
+
+# VS Code or JetBrains IDE
+.vscode/
+.idea/
+
+# macOS system files
+.DS_Store
+
+# Pytest cache
+.pytest_cache/
