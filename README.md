@@ -1,6 +1,12 @@
 # Blue Team AI Assistant
 
-**Blue Team AI** is a modular Python tool for parsing syslog logs, built for security analysts and defenders. It converts RFC5424-formatted syslog data into structured JSON, ready for analysis, ingestion, or downstream automation.
+**Blue Team AI** is a modular Python CLI tool for parsing, enriching, and alerting on syslog logs.
+
+It provides:
+
+* **Parsing** of RFC5424 syslog lines into structured JSON
+* **Enrichment** of records with IOC tagging
+* **Rule-based detection** for brute-force, suspicious cron, and IOC hits
 
 ---
 
@@ -13,80 +19,104 @@ cd blue-team-ai
 
 # Create and activate virtual environment
 python3 -m venv .venv
-source .venv/bin/activate    # Linux/macOS
-# or .venv\Scripts\activate   # Windows
+source .venv/bin/activate  # Linux/macOS
 
-# Install in editable mode
-pip install -e .
+# Install dependencies
+pip install -r requirements.txt
 ```
 
 ---
 
 ## 🚀 Usage
 
-### Exit on first malformed line (default behavior)
+### 1. Parse Syslog
+
+Convert RFC5424 logs to JSON:
 
 ```bash
-python blue_team_ai/cli.py --file data/sample_syslog.log
+python3 -m blue_team_ai.cli \
+  --file blue_team_ai/data/sample_syslog.log
 ```
 
-### Write to an output file (exit on first malformed line)
+### 2. Write to Output File
+
+Save parsed JSON to a file:
 
 ```bash
-python blue_team_ai/cli.py --file data/sample_syslog.log --output output.json
+python3 -m blue_team_ai.cli \
+  --file blue_team_ai/data/sample_syslog.log \
+  --output output.json
 ```
 
-### Skip malformed lines, logging warnings
+### 3. Enrich Records
+
+Tag IOCs in parsed records:
 
 ```bash
-python blue_team_ai/cli.py --file data/sample_syslog.log --output output.json --ignore-errors
+python3 -m blue_team_ai.cli \
+  --file blue_team_ai/data/sample_syslog.log \
+  --enrich \
+  --ioc-file blue_team_ai/data/iocs.csv
 ```
 
-### Skip malformed lines and print valid JSON to stdout
+### 4. Apply Alert Rules
+
+Detect anomalies and IOC hits:
 
 ```bash
-python blue_team_ai/cli.py --file data/sample_syslog.log --ignore-errors
+python3 -m blue_team_ai.cli \
+  --file blue_team_ai/data/sample_syslog.log \
+  --enrich --rules \
+  --ioc-file blue_team_ai/data/iocs.csv \
+  --output alerts.json
 ```
 
-**Flags:**
+#### Available Flags
 
-* `-f, --file <FILE>`: Path to the input syslog file (required).
-* `-o, --output <FILE>`: Optional path for the JSON output file. If omitted, results print to stdout.
-* `-i, --ignore-errors`: When set, malformed lines issue a warning and are skipped; otherwise, the first malformed line triggers an error and exit code 1.
+| Flag           | Description                                               |
+| -------------- | --------------------------------------------------------- |
+| `-f, --file`   | Path to input syslog file (required)                      |
+| `-o, --output` | Path to write JSON output (prints to stdout if omitted)   |
+| `-e, --enrich` | Enable IOC enrichment                                     |
+| `--ioc-file`   | IOC CSV feed path (default: `blue_team_ai/data/iocs.csv`) |
+| `-r, --rules`  | Enable rule-based alert detection                         |
 
 ---
 
 ## 🧪 Running Tests
 
+Run all unit tests:
+
 ```bash
- python3 -m pytest tests/test_parse_logs.py
+pytest -v
 ```
 
 ---
 
-## 📁 Project Structure
+## 📁 Project Structure For Future Use
 
 ```
 blue-team-ai/
 ├── blue_team_ai/
-│   ├── cli.py                  # Command-line entrypoint
-│   ├── parsers/
-│   │   └── parse_logs.py       # Syslog parser logic
-│   └── exceptions/
-│       └── unsupported_format.py
-├── tests/
-│   └── test_parse_logs.py      # Unit tests for parser
-├── pyproject.toml              # Project metadata
-└── README.md                   # You're here
+│   ├── cli.py                  # CLI entrypoint (parse → enrich → rules)
+│   ├── parsers/parse_logs.py   # RFC5424 parsing logic
+│   ├── enrichment.py           # IOC & GeoIP enrichment functions
+│   ├── rules.py                # Rule-based detection engine
+│   ├── exceptions/             # Custom exception(s)
+│   │   └── unsupported_format.py
+│   └── data/                   # Sample data files
+│       ├── sample_syslog.log   # Example syslog entries
+│       ├── iocs.csv            # Threat-intel feed
+│       └── GeoLite2-City.mmdb  # GeoIP database (optional)
+├── tests/                      # Unit tests
+│   ├── test_parse_logs.py
+│   ├── test_enrichment.py
+│   ├── test_rules.py
+│   ├── test_schema.py          # Yet to add
+│   └── test_prompt.py          # Yet to add
+├── requirements.txt            # Python dependencies
+└── README.md                   # Project overview and usage
 ```
-
----
-
-## ✨ Coming Soon
-
-* Auto-detection of RFC3164 vs RFC5424 formats
-* Support for log batching & streaming
-* Integration with SIEM or log forwarders
 
 ---
 

@@ -1,0 +1,18 @@
+ioc,type,description
+203.0.113.5,malicious\_ip,Tor exit node
+192.0.2.44,malicious\_ip,Known brute-force host
+185.27.134.10,malicious\_ip,Mirai botnet C2 server
+198.51.100.23,malicious\_ip,Phishing attack server
+66.66.66.66,malicious\_ip,Spamvertising host
+bad.example.com,malicious\_domain,Phishing site for credential theft
+malware.bad,malicious\_domain,Malware distribution domain
+evil-domain.org,malicious\_domain,Command and control domain
+login.bad,malicious\_domain,Credential stuffing site
+ryuk-ransomware.com,malicious\_domain,Ryuk ransomware distribution
+5d41402abc4b2a76b9719d911017c592,file\_hash,MD5 of malicious payload sample
+d41d8cd98f00b204e9800998ecf8427e,file\_hash,Empty file hash (test)
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855,sha256\_hash,Example SHA256 of malware [http://evil.example.com/malware.bin,url,Malware](http://evil.example.com/malware.bin,url,Malware) download link[https://phish.example.net/login,url,Phishing](https://phish.example.net/login,url,Phishing) login URL
+10.0.0.200,malicious\_ip,Internal testing of exploit server
+203.0.113.9,malicious\_ip,Exploit kit distribution server
+ftp.malicious.org,malicious\_domain,FTP server serving malicious binaries
+hash1234567890abcdef,sha1\_hash,Example SHA1 file hash
