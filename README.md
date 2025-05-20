@@ -19,7 +19,7 @@ It provides:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/blue-team-ai.git
+git clone https://github.com/aaronsawit/blue-team-ai.git
 cd blue-team-ai
 
 # Create and activate virtual environment
