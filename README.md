@@ -127,4 +127,4 @@ blue-team-ai/
 
 ## 📝 License
 
-MIT © Your Name or Organization
+This tool is provided as-is for educational and security research purposes.
