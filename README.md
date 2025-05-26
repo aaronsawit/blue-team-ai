@@ -11,7 +11,7 @@ It provides:
 
 ## Future Addition
 * **GeoI IntegrationP** GeoIP enrichment adds geographic context to your parsed logs by looking up each IP address against a local GeoIP database (e.g. MaxMind’s GeoLite2-City .mmdb).
-* **AI Summary Integation**  To turn structured alerts into human‐readable summaries or deeper analysis, you can pipe your final JSON (parsed/enriched/alerted) into an LLM. A small helper script (e.g. ai_analysis.py) can:
+* **AI Summary Integation**  To turn structured alerts into human‐readable summaries or deeper analysis, you can pipe your final JSON (parsed/enriched/alerted) into an LLM.
 
 ---
 
