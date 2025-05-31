@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """
-blue_team_ai/cli.py — Production CLI for syslog parsing, enrichment, and rule evaluation
+blue_team_ai/cli.py — Production CLI: parse → enrich (IOC/GeoIP) → rules → AI classification → JSON output
 """
 import argparse
 import json
-import sys
 import logging
+import sys
 from pathlib import Path
 
+# 1) Parsing logic
 from blue_team_ai.parsers.parse_logs import parse_syslog
+
+# 2) Enrichment: IOC + free‐API GeoIP
 from blue_team_ai.enrichment import load_ioc_list, enrich_all
+
+# 3) Rules engine (optional rule-based alerts)
 from blue_team_ai.rules import apply_rules
 
+# 4) AI classification (DeepSeek)
+from blue_team_ai.ai import classify_record
 
 def setup_logging(verbose: bool):
     """
@@ -22,8 +29,7 @@ def setup_logging(verbose: bool):
         format="%(asctime)s %(levelname)s: %(message)s", level=level
     )
 
-
-def load_file(file_path: Path):
+def load_file(file_path: Path) -> list[str]:
     """
     Read non-empty lines from the syslog file. Exit on errors.
     """
@@ -38,13 +44,22 @@ def load_file(file_path: Path):
         logging.error("Failed reading file %s: %s", file_path, e)
         sys.exit(1)
 
-
-def process_records(lines, do_enrich: bool, ioc_file: Path, do_rules: bool):
+def process_records(
+    lines: list[str],
+    do_enrich: bool,
+    ioc_file: Path,
+    geoip_enabled: bool,
+    do_rules: bool,
+    do_ai: bool
+) -> list[dict]:
     """
-    Parse, optionally enrich, and optionally apply rules to a list of log lines.
+    1. Parse lines → list of dicts
+    2. If do_enrich: attach IOC hits (always) + GeoIP (if geoip_enabled=True)
+    3. If do_rules: run apply_rules(parsed) to produce alert list
+    4. If do_ai: classify each final record via DeepSeek (attach ai_label & ai_score)
     """
-    # Parse
-    parsed = []
+    # 1) Parse each line into a record dict
+    parsed: list[dict] = []
     for line in lines:
         try:
             rec = parse_syslog(line)
@@ -53,21 +68,37 @@ def process_records(lines, do_enrich: bool, ioc_file: Path, do_rules: bool):
         except Exception as e:
             logging.warning("Parse error on line '%s': %s", line[:50], e)
 
-    # Enrich with IOCs
+    # 2) Enrichment: IOC + free‐API GeoIP
     if do_enrich:
-        iocs = load_ioc_list(str(ioc_file))
-        parsed = enrich_all(parsed, iocs, None)
+        try:
+            iocs = load_ioc_list(str(ioc_file))
+        except Exception as e:
+            logging.error("Could not load IOC list: %s", e)
+            sys.exit(1)
+        parsed = enrich_all(parsed, iocs, geoip_enabled)
 
-    # Apply rules
+    # 3) Rule‐based alerting
     if do_rules:
-        return apply_rules(parsed)
+        output_list = apply_rules(parsed)
+    else:
+        output_list = parsed
 
-    return parsed
+    # 4) AI classification
+    if do_ai:
+        for r in output_list:
+            try:
+                r.update(classify_record(r))
+            except Exception as e:
+                # If AI classification fails, attach default values
+                r["ai_label"] = "error"
+                r["ai_score"] = 0.0
+                logging.debug("AI classification failed for record: %s", e)
 
+    return output_list
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert RFC5424 syslog to JSON with optional IOC enrichment and rule alerts"
+        description="Convert RFC5424 syslog → JSON + optional enrichment (IOC/GeoIP) + rules + AI classification"
     )
     parser.add_argument(
         "--file", "-f", required=True, type=Path,
@@ -82,12 +113,21 @@ def main():
         help="Enable IOC enrichment"
     )
     parser.add_argument(
-        "--ioc-file", type=Path, default=Path(__file__).parent / "data" / "iocs.csv",
-        help="CSV file of IOCs for enrichment"
+        "--geoip", action="store_true",
+        help="Enable free‐API GeoIP lookup (via ip-api.com)"
+    )
+    parser.add_argument(
+        "--ioc-file", type=Path,
+        default=Path(__file__).parent / "data" / "iocs.csv",
+        help="CSV file of IOCs to load (default: data/iocs.csv)"
     )
     parser.add_argument(
         "--rules", action="store_true",
-        help="Enable alert rule evaluation"
+        help="Enable rule‐based alert evaluation"
+    )
+    parser.add_argument(
+        "--ai", action="store_true",
+        help="Enable DeepSeek AI classification"
     )
     parser.add_argument(
         "--verbose", "-v", action="store_true",
@@ -97,31 +137,38 @@ def main():
 
     setup_logging(args.verbose)
 
-    # Load and process
+    # 1) Load file
     lines = load_file(args.file)
+
+    # 2) Process pipeline
     output_records = process_records(
-        lines, args.enrich, args.ioc_file, args.rules
+        lines,
+        do_enrich=args.enrich,
+        ioc_file=args.ioc_file,
+        geoip_enabled=args.geoip,
+        do_rules=args.rules,
+        do_ai=args.ai,
     )
 
-    # Build output summary
+    # 3) Build output summary
     summary = {
         "total_lines": len(lines),
+        # If rules applied, parsed_records is not meaningful
         "parsed_records": None if args.rules else len(output_records),
         "output_records": len(output_records),
         "records": output_records
     }
 
-    # Serialize
+    # 4) Serialize to JSON
     try:
         out_json = json.dumps(summary, default=str, indent=2)
     except Exception as e:
         logging.error("Failed to serialize output JSON: %s", e)
         sys.exit(1)
 
-    # Write or print
+    # 5) Write or print
     if args.output:
         try:
-            # Ensure parent directory exists
             args.output.parent.mkdir(parents=True, exist_ok=True)
             with args.output.open("w") as f:
                 f.write(out_json)
@@ -132,6 +179,6 @@ def main():
     else:
         print(out_json)
 
-
 if __name__ == "__main__":
     main()
+s
