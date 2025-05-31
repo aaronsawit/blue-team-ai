@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
 blue_team_ai/enrichment.py — IOC enrichment + Free‐API GeoIP lookup for syslog records.
+
+Now, if geoip_enabled=True, every record receives a 'geoip' key:
+- If an IP is found, 'geoip' = lookup_geoip(ip)
+- If no IP is found, 'geoip' = {}
 """
 import csv
 import re
@@ -52,12 +56,10 @@ def lookup_geoip(ip: str) -> Dict[str, str]:
     """
     Use the free ip-api.com service to return geo info for `ip`.
     Returns: {"country": "US", "city": "San Francisco"} or {} on failure.
-    Rate‐limit is approximately 45 requests/minute.
     """
     if not ip:
         return {}
     try:
-        # Query ip-api.com with a short timeout
         response = requests.get(f"http://ip-api.com/json/{ip}", timeout=2)
         data = response.json()
         if data.get("status") == "success":
@@ -66,7 +68,6 @@ def lookup_geoip(ip: str) -> Dict[str, str]:
                 "city": data.get("city", "")
             }
     except Exception:
-        # On any failure (timeout, network error, etc.), return empty dict
         pass
     return {}
 
@@ -79,11 +80,12 @@ def enrich_record(
     Enrich a single parsed syslog record with IOC tags and optional GeoIP data.
     - record: dict output from parse_syslog()
     - ioc_list: list of IOC dicts from load_ioc_list()
-    - geoip_enabled: if True, perform a free API lookup for each record's IP
-
+    - geoip_enabled: if True, every record gets a 'geoip' key:
+        * If an IP is found, lookup_geoip(ip)
+        * If no IP, {}
     Returns a shallow copy of `record` with added keys:
       - 'ioc_hits': List[Dict[str, str]]  (each dict contains 'ioc','type','description')
-      - If geoip_enabled=True and an IP is found, 'geoip': { 'country', 'city' }
+      - If geoip_enabled=True, always attach 'geoip': { 'country', 'city' } (or empty)
     """
     enriched = record.copy()
 
@@ -101,14 +103,16 @@ def enrich_record(
     host_val = enriched.get("host", "")
     for ioc in ioc_list:
         ioc_value = ioc["ioc"]
-        if (ioc_value and ((ioc_value in msg_text) or (ioc_value == host_val) or (ioc_value == src_ip))):
+        if ioc_value and ((ioc_value in msg_text) or (ioc_value == host_val) or (ioc_value == src_ip)):
             hits.append(ioc)
     enriched["ioc_hits"] = hits
 
-    # 3) GeoIP enrichment (if enabled)
-    if geoip_enabled and src_ip:
-        geo_data = lookup_geoip(src_ip)
-        enriched["geoip"] = geo_data if geo_data else {}
+    # 3) GeoIP enrichment (always attach 'geoip' if requested)
+    if geoip_enabled:
+        if src_ip:
+            enriched["geoip"] = lookup_geoip(src_ip)
+        else:
+            enriched["geoip"] = {}
 
     return enriched
 
@@ -118,13 +122,10 @@ def enrich_all(
     geoip_enabled: bool = False
 ) -> List[Dict[str, Any]]:
     """
-    Enrich a list of parsed syslog records with IOC tags (always) and
-    GeoIP data (if geoip_enabled=True).
-
+    Enrich a list of parsed syslog records with IOC tags and optional GeoIP.
     - records: list of dicts from parse_syslog()
     - ioc_list: list from load_ioc_list()
-    - geoip_enabled: whether to call lookup_geoip() per record
-
+    - geoip_enabled: if True, every record gets a 'geoip' key
     Returns a new list of enriched dicts.
     """
     enriched_records: List[Dict[str, Any]] = []

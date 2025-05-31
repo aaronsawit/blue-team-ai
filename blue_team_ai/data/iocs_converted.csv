@@ -1,0 +1,17 @@
+malicious\_ip,203.0.113.5
+malicious\_ip,192.0.2.44
+malicious\_ip,185.27.134.10
+malicious\_ip,198.51.100.23
+malicious\_ip,66.66.66.66
+malicious\_domain,bad.example.com
+malicious\_domain,malware.bad
+malicious\_domain,evil-domain.org
+malicious\_domain,login.bad
+malicious\_domain,ryuk-ransomware.com
+hash,5d41402abc4b2a76b9719d911017c592
+hash,d41d8cd98f00b204e9800998ecf8427e
+hash,e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+malicious\_ip,10.0.0.200
+malicious\_ip,203.0.113.9
+malicious\_domain,ftp.malicious.org
+hash,hash1234567890abcdef

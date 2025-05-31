@@ -1,98 +1,119 @@
-#!/usr/bin/env pytest
-"""
-tests/test_enrichment.py — Unit tests for enrichment module.
-"""
+# tests/test_enrichment.py
+
+import os
+import tempfile
+import csv
 import pytest
-from pathlib import Path
+
 from blue_team_ai.enrichment import (
     load_ioc_list,
     extract_ip,
+    lookup_geoip,
     enrich_record,
-    enrich_all
+    enrich_all,
 )
 
+# 1. Test extract_ip (regex-based)
+def test_extract_ip_found():
+    record = {"message": "Failed login from 192.168.0.42 for user root"}
+    assert extract_ip(record) == "192.168.0.42"
 
+def test_extract_ip_not_found():
+    record = {"message": "No IP here, just plain text"}
+    assert extract_ip(record) is None
+
+# 2. Test load_ioc_list using a temporary CSV
 def test_load_ioc_list(tmp_path):
-    # Create a temporary IOC CSV file
-    content = (
-        "ioc,type,description\n"
-        "1.2.3.4,malicious_ip,Test IP IOC\n"
-        "bad.example.com,malicious_domain,Test domain IOC\n"
-    )
+    # Create a temporary CSV with header and two IOCs
     csv_file = tmp_path / "iocs.csv"
-    csv_file.write_text(content)
+    with open(csv_file, "w", newline="") as f:
+        writer = csv.writer(f)
+        # Must have columns: ioc,type,description
+        writer.writerow(["ioc", "type", "description"])
+        writer.writerow(["1.2.3.4", "ip", "Test IOC A"])
+        writer.writerow(["bad.domain.com", "domain", "Test IOC B"])
 
     iocs = load_ioc_list(str(csv_file))
-    assert isinstance(iocs, list)
-    assert len(iocs) == 2
+    # Should be a list of two dicts
+    assert isinstance(iocs, list) and len(iocs) == 2
     assert iocs[0]["ioc"] == "1.2.3.4"
-    assert iocs[0]["type"] == "malicious_ip"
-    assert iocs[1]["description"] == "Test domain IOC"
+    assert iocs[0]["type"] == "ip"
+    assert iocs[0]["description"] == "Test IOC A"
+    assert iocs[1]["ioc"] == "bad.domain.com"
 
+# 3. Test lookup_geoip (monkeypatch HTTP call to ip-api.com)
+def test_lookup_geoip_success(monkeypatch):
+    # Monkeypatch requests.get inside lookup_geoip to return a dummy success JSON
+    class DummyResp:
+        def json(self):
+            return {"status": "success", "countryCode": "ZZ", "city": "Testville"}
 
-def test_extract_ip():
-    record_with_ip = {"message": "Failed login from 5.6.7.8 port 22"}
-    assert extract_ip(record_with_ip) == "5.6.7.8"
+    def dummy_get(url, timeout):
+        return DummyResp()
 
-    record_without_ip = {"message": "No IP address here"}
-    assert extract_ip(record_without_ip) is None
+    monkeypatch.setenv("NO_INTERNET", "1")  # Just to signify we’re stubbing
+    import requests
+    monkeypatch.setattr(requests, "get", dummy_get)
 
+    geo = lookup_geoip("8.8.8.8")
+    assert geo == {"country": "ZZ", "city": "Testville"}
 
-def test_enrich_record_without_geo():
-    record = {"message": "Connection from 9.9.9.9", "host": "server1"}
-    ioc_list = [{"ioc": "9.9.9.9", "type": "malicious_ip", "description": "Test IOC"}]
-    enriched = enrich_record(record, ioc_list, geo_reader=None)
+def test_lookup_geoip_failure(monkeypatch):
+    # If the HTTP call returns a non-success status, or raises, we get {}
+    class DummyResp:
+        def json(self):
+            return {"status": "fail"}
 
-    # IOC hits should be tagged
-    assert "ioc_hits" in enriched
-    assert len(enriched["ioc_hits"]) == 1
-    assert enriched["ioc_hits"][0]["ioc"] == "9.9.9.9"
+    def dummy_get(url, timeout):
+        return DummyResp()
 
-    # No geoip field when geo_reader is None
+    import requests
+    monkeypatch.setattr(requests, "get", dummy_get)
+
+    geo = lookup_geoip("8.8.8.8")
+    assert geo == {}
+
+# 4. Test enrich_record and enrich_all
+def test_enrich_record_and_enrich_all(monkeypatch, tmp_path):
+    # 4.1. Prepare a dummy IOC list
+    ioc_list = [
+        {"ioc": "1.2.3.4", "type": "ip", "description": "Test IP IOC"},
+        {"ioc": "evil.com", "type": "domain", "description": "Bad Domain IOC"}
+    ]
+
+    # 4.2. Prepare a single record with a message containing both an IP and a domain
+    record = {
+        "host": "myhost",
+        "message": "User connected from 1.2.3.4 and also tried evil.com",
+    }
+
+    # Monkeypatch lookup_geoip to return a known dict
+    monkeypatch.setattr("blue_team_ai.enrichment.lookup_geoip", lambda ip: {"country": "ZZ", "city": "Nowhere"})
+
+    # Enrich only IOC (geoip_enabled=False)
+    enriched = enrich_record(record, ioc_list, geoip_enabled=False)
+    assert "src_ip" in enriched and enriched["src_ip"] == "1.2.3.4"
+    assert isinstance(enriched["ioc_hits"], list)
+    # Should contain exactly two IOCs (ip and domain)
+    assert any(hit["ioc"] == "1.2.3.4" for hit in enriched["ioc_hits"])
+    assert any(hit["ioc"] == "evil.com" for hit in enriched["ioc_hits"])
+    # Should not have "geoip" key
     assert "geoip" not in enriched
 
+    # Enrich with GeoIP enabled
+    enriched2 = enrich_record(record, ioc_list, geoip_enabled=True)
+    assert "geoip" in enriched2
+    assert enriched2["geoip"] == {"country": "ZZ", "city": "Nowhere"}
 
-class FakeGeoReader:
-    class Country:
-        name = "TestCountry"
-    class City:
-        name = "TestCity"
-    class Traits:
-        autonomous_system_number = 54321
-
-    def city(self, ip):
-        # Return an object with country, city, and traits attributes
-        class GeoInfo:
-            country = FakeGeoReader.Country
-            city = FakeGeoReader.City
-            traits = FakeGeoReader.Traits
-        return GeoInfo()
-
-
-def test_enrich_record_with_geo():
-    record = {"message": "Ping from 1.1.1.1", "host": "server2"}
-    ioc_list = []
-    fake_geo = FakeGeoReader()
-    enriched = enrich_record(record, ioc_list, geo_reader=fake_geo)
-
-    # GeoIP enrichment should attach geoip dict
-    assert "geoip" in enriched
-    geo = enriched["geoip"]
-    assert geo["country"] == "TestCountry"
-    assert geo["city"] == "TestCity"
-    assert geo["asn"] == 54321
-
-
-def test_enrich_all():
-    records = [
-        {"message": "x 2.2.2.2 y", "host": "h1"},
-        {"message": "z", "host": "h2"}
-    ]
-    ioc_list = []
-    enriched_list = enrich_all(records, ioc_list, geo_reader=None)
-
+    # 4.3. Test enrich_all on a list of records
+    rec_list = [record.copy(), {"message": "No IOC here", "host": "other"}]
+    enriched_list = enrich_all(rec_list, ioc_list, geoip_enabled=True)
     assert isinstance(enriched_list, list)
     assert len(enriched_list) == 2
-    # Each record should have an ioc_hits key
-    for rec in enriched_list:
-        assert "ioc_hits" in rec
+    # First record should have two hits + geoip
+    assert len(enriched_list[0]["ioc_hits"]) == 2
+    assert "geoip" in enriched_list[0]
+    # Second record: no matches means empty ioc_hits, but still geoip (if an IP found); since no IP, geoip is {}
+    assert enriched_list[1]["ioc_hits"] == []
+    assert "geoip" in enriched_list[1]
+    assert enriched_list[1]["geoip"] == {}

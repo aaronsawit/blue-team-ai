@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
 blue_team_ai/cli.py — Production CLI: parse → enrich (IOC/GeoIP) → rules → AI classification → JSON output
+
+Note: On successful completion, this script calls sys.exit(0) so that
+pytest tests expecting a SystemExit pass cleanly.
 """
 import argparse
 import json
@@ -11,14 +14,15 @@ from pathlib import Path
 # 1) Parsing logic
 from blue_team_ai.parsers.parse_logs import parse_syslog
 
-# 2) Enrichment: IOC + free‐API GeoIP
-from blue_team_ai.enrichment import load_ioc_list, enrich_all
+# 2) Enrichment: IOC + free‐API GeoIP (rely on module reference for lookup_geoip)
+import blue_team_ai.enrichment as enrichment_module
+from blue_team_ai.enrichment import load_ioc_list, enrich_all, extract_ip
 
-# 3) Rules engine (optional rule-based alerts)
+# 3) Rules engine (optional)
 from blue_team_ai.rules import apply_rules
 
 # 4) AI classification (DeepSeek)
-from blue_team_ai.ai import classify_record
+import blue_team_ai.ai as ai_module
 
 def setup_logging(verbose: bool):
     """
@@ -54,11 +58,12 @@ def process_records(
 ) -> list[dict]:
     """
     1. Parse lines → list of dicts
-    2. If do_enrich: attach IOC hits (always) + GeoIP (if geoip_enabled=True)
-    3. If do_rules: run apply_rules(parsed) to produce alert list
-    4. If do_ai: classify each final record via DeepSeek (attach ai_label & ai_score)
+    2. If do_enrich: attach IOC tags (enrich_all with geoip_enabled=False)
+    3. If geoip_enabled: for every record, attach geoip = enrichment_module.lookup_geoip(src_ip or "")
+    4. If do_rules: run apply_rules(parsed) to produce alert list
+    5. If do_ai: classify each final record via ai_module.classify_record
     """
-    # 1) Parse each line into a record dict
+    # 1) Parse each line
     parsed: list[dict] = []
     for line in lines:
         try:
@@ -68,31 +73,41 @@ def process_records(
         except Exception as e:
             logging.warning("Parse error on line '%s': %s", line[:50], e)
 
-    # 2) Enrichment: IOC + free‐API GeoIP
+    # 2) IOC enrichment only (no geoip)
     if do_enrich:
         try:
             iocs = load_ioc_list(str(ioc_file))
         except Exception as e:
             logging.error("Could not load IOC list: %s", e)
             sys.exit(1)
-        parsed = enrich_all(parsed, iocs, geoip_enabled)
+        parsed = enrich_all(parsed, iocs, geoip_enabled=False)
 
-    # 3) Rule‐based alerting
+    # 3) Free‐API GeoIP enrichment for EVERY record
+    if geoip_enabled:
+        for r in parsed:
+            src_ip = r.get("src_ip")
+            if not src_ip:
+                src_ip = extract_ip(r) or ""
+            # IMPORTANT: Call through the module so pytest monkeypatch works
+            r["geoip"] = enrichment_module.lookup_geoip(src_ip or "")
+
+    # 4) Rule‐based alerting
     if do_rules:
         output_list = apply_rules(parsed)
     else:
         output_list = parsed
 
-    # 4) AI classification
+    # 5) AI classification
     if do_ai:
         for r in output_list:
             try:
-                r.update(classify_record(r))
+                ai_result = ai_module.classify_record(r)
+                r["ai_label"] = ai_result.get("ai_label", "")
+                r["ai_score"] = ai_result.get("ai_score", 0.0)
             except Exception as e:
-                # If AI classification fails, attach default values
                 r["ai_label"] = "error"
                 r["ai_score"] = 0.0
-                logging.debug("AI classification failed for record: %s", e)
+                logging.debug("AI classification failed: %s", e)
 
     return output_list
 
@@ -153,7 +168,6 @@ def main():
     # 3) Build output summary
     summary = {
         "total_lines": len(lines),
-        # If rules applied, parsed_records is not meaningful
         "parsed_records": None if args.rules else len(output_records),
         "output_records": len(output_records),
         "records": output_records
@@ -179,6 +193,8 @@ def main():
     else:
         print(out_json)
 
+    # 6) Explicitly exit with code 0 so pytest can catch SystemExit
+    sys.exit(0)
+
 if __name__ == "__main__":
     main()
-s

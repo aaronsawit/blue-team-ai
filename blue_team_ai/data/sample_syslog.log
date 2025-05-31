@@ -12,3 +12,5 @@
 <46>1 2025-05-15T14:33:04Z web01 nginx 2312 ID49 - GET /index.html HTTP/1.1 200
 <13>1 2025-05-15T14:31:02Z host1 cron 1002 ID48 - (root) CMD (cd / && run-parts --report /etc/cron.hourly)
 <34>1 2025-05-15T14:32:03Z host1 sshd 1001 ID49 [exampleSDID@32473 eventSource="sshd" eventID="1123"] User login succeeded for user1
+<34>1 2025-06-01T02:00:00Z host1 sshd 1001 ID99 - Failed password for root from 203.0.113.45 port 22 ssh2
+<13>1 2025-06-01T02:01:00Z web01 nginx 2048 ID100 - 192.0.2.10 - - [01/Jun/2025:02:01:00 +0000] "GET /index.php?id=1; DROP TABLE users;-- HTTP/1.1" 404 512
