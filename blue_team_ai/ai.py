@@ -30,9 +30,11 @@ except Exception as e:
     client = None
     model_name = None
 
+
 def classify_record(record: Dict[str, Any]) -> Dict[str, Any]:
     """
     Classify a log record's 'message' using DeepSeek (via OpenRouter).
+    Now includes IOC context for accurate AI scoring.
     Returns a dict with keys:
       - 'ai_label': the predicted label (e.g., 'anomaly' or 'normal')
       - 'ai_score': the confidence score (float)
@@ -41,62 +43,56 @@ def classify_record(record: Dict[str, Any]) -> Dict[str, Any]:
     {'ai_label': '', 'ai_score': 0.0}.
     """
     message = record.get("message", "")
+    ioc_hits = record.get("ioc_hits", [])
+    src_ip = record.get("src_ip", "")
+    
     if not message or client is None:
         return {"ai_label": "", "ai_score": 0.0}
 
     try:
+        # Build context about IOC hits
+        ioc_context = ""
+        if ioc_hits:
+            ioc_details = []
+            for hit in ioc_hits:
+                ioc_details.append(f"- {hit['ioc']} ({hit['type']}): {hit['description']}")
+            ioc_context = f"\n\nTHREAT INTELLIGENCE MATCHES:\n" + "\n".join(ioc_details)
+        
         prompt = (
-            "You are a security log classifier. Answer **only** in the format:"
-            "Label: <<normal|anomaly>>, Score: <float>\n\n"
-            "Do not add any extra text or explanation.\n\n"
-            f"{message}"
+            "You are a cybersecurity expert. Analyze this log and classify the threat level.\n\n"
+            "SCORING SYSTEM:\n"
+            "• malicious (-1): Confirmed threats, IOC matches, successful attacks\n"  
+            "• anomalous (0): Suspicious activity, failed attempts, unusual patterns\n"
+            "• normal (1): Routine operations, successful logins, standard traffic\n\n"
+            f"LOG MESSAGE: {message}"
+            f"{ioc_context}\n\n"
+            "Consider: If there are IOC matches, this is definitely malicious. "
+            "Failed logins, blocked connections = anomalous. "
+            "Regular operations = normal.\n\n"
+            "Response format: Label: <malicious|anomalous|normal>, Score: <0.0-1.0>"
         )
 
         response = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "You are a security log classifier."},
-                {"role": "user",   "content": prompt}
-            ],
-            temperature=0.0,
-            max_tokens=50
+            model="deepseek/deepseek-chat:free",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=25,
+            temperature=0.0
         )
-
-        # The OpenAI client returns a ChatCompletion object, not a dict
-        # Access attributes directly, not with .get()
-        if not response.choices:
-            print(f"[OpenRouter Empty Choices] {response}", file=sys.stderr)
-            return {"ai_label": "", "ai_score": 0.0}
-
-        content = response.choices[0].message.content
-        if not content:
-            print(f"[OpenRouter Empty Content] {response}", file=sys.stderr)
-            return {"ai_label": "", "ai_score": 0.0}
-
-        content = content.strip()
-
-        # Expect something like: "Label: Anomaly, Score: 0.92"
+        
+        content = response.choices[0].message.content.strip()
+        
+        # Parse response: "Label: malicious, Score: 0.95"
         if "Label:" in content and "Score:" in content:
             parts = content.split(",")
-            if len(parts) >= 2:
-                # Extract label
-                label_part = parts[0].split("Label:")[1].strip()
-                # Extract score
-                try:
-                    score_part = parts[1].split("Score:")[1].strip()
-                    score = float(score_part)
-                except (ValueError, IndexError) as e:
-                    print(f"[Score Parse Error] {e} | score_part: '{parts[1] if len(parts) > 1 else 'N/A'}'", file=sys.stderr)
-                    score = 0.0
-                return {"ai_label": label_part, "ai_score": score}
-            else:
-                print(f"[Parse Error] Not enough parts after split: {parts}", file=sys.stderr)
-                return {"ai_label": content, "ai_score": 0.0}
-        else:
-            # Unexpected format—dump for debugging
-            print(f"[OpenRouter Unexpected Format] content='{content}'", file=sys.stderr)
-            return {"ai_label": content, "ai_score": 0.0}
-
-    except Exception as ex:
-        print(f"[OpenRouter Classification Error] {ex}", file=sys.stderr)
-        return {"ai_label": "error", "ai_score": 0.0}
+            label_part = parts[0].split("Label:")[1].strip()
+            score_part = parts[1].split("Score:")[1].strip()
+            
+            return {
+                "ai_label": label_part.lower(),
+                "ai_score": float(score_part)
+            }
+            
+    except Exception as e:
+        print(f"AI classification error: {e}")
+    
+    return {"ai_label": "", "ai_score": 0.0}

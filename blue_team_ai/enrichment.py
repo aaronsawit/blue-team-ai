@@ -15,6 +15,13 @@ import requests
 # Regular expression to extract IPv4 addresses
 IP_REGEX = re.compile(r"(?P<ip>\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b)")
 
+# Regular expressions for different IOC types
+DOMAIN_REGEX = re.compile(r'\b[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}\b')
+URL_REGEX = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+')
+MD5_REGEX = re.compile(r'\b[a-fA-F0-9]{32}\b')
+SHA1_REGEX = re.compile(r'\b[a-fA-F0-9]{40}\b')
+SHA256_REGEX = re.compile(r'\b[a-fA-F0-9]{64}\b')
+
 # Default path for IOCs CSV (relative to this file)
 IOC_CSV_DEFAULT = Path(__file__).parent / "data" / "iocs.csv"
 
@@ -52,6 +59,28 @@ def extract_ip(record: Dict[str, Any]) -> Optional[str]:
     match = IP_REGEX.search(message)
     return match.group("ip") if match else None
 
+def extract_domains(text: str) -> List[str]:
+    """
+    Extract all domain names from the given text.
+    """
+    return [match.group(0) for match in DOMAIN_REGEX.finditer(text)]
+
+def extract_urls(text: str) -> List[str]:
+    """
+    Extract all URLs from the given text.
+    """
+    return URL_REGEX.findall(text)
+
+def extract_hashes(text: str) -> List[str]:
+    """
+    Extract all hash values (MD5, SHA1, SHA256) from the given text.
+    """
+    hashes = []
+    hashes.extend(MD5_REGEX.findall(text))
+    hashes.extend(SHA1_REGEX.findall(text))
+    hashes.extend(SHA256_REGEX.findall(text))
+    return hashes
+
 def lookup_geoip(ip: str) -> Dict[str, str]:
     """
     Use the free ip-api.com service to return geo info for `ip`.
@@ -88,6 +117,7 @@ def enrich_record(
       - If geoip_enabled=True, always attach 'geoip': { 'country', 'city' } (or empty)
     """
     enriched = record.copy()
+    message = enriched.get("message", "")
 
     # 1) Extract or confirm src_ip
     src_ip = enriched.get("src_ip")
@@ -97,15 +127,81 @@ def enrich_record(
             enriched["src_ip"] = ip_found
             src_ip = ip_found
 
-    # 2) IOC tagging
-    hits: List[Dict[str, str]] = []
-    msg_text = enriched.get("message", "")
-    host_val = enriched.get("host", "")
-    for ioc in ioc_list:
-        ioc_value = ioc["ioc"]
-        if ioc_value and ((ioc_value in msg_text) or (ioc_value == host_val) or (ioc_value == src_ip)):
-            hits.append(ioc)
-    enriched["ioc_hits"] = hits
+    # 2) IOC tagging - Initialize empty list
+    enriched["ioc_hits"] = []
+
+    # Create sets of IOCs by type for efficient lookup
+    malicious_ips = set()
+    malicious_domains = set()
+    malicious_urls = set()
+    malicious_hashes = set()
+    
+    for ioc_entry in ioc_list:
+        ioc_value = ioc_entry["ioc"].lower()
+        ioc_type = ioc_entry["type"].lower()
+        
+        if ioc_type == "ip":
+            malicious_ips.add(ioc_value)
+        elif ioc_type == "domain":
+            malicious_domains.add(ioc_value)
+        elif ioc_type == "url":
+            malicious_urls.add(ioc_value)
+        elif ioc_type == "hash":
+            malicious_hashes.add(ioc_value)
+
+    # Check for IP IOCs
+    if src_ip and src_ip.lower() in malicious_ips:
+        # Find the matching IOC entry for full details
+        for ioc_entry in ioc_list:
+            if ioc_entry["ioc"].lower() == src_ip.lower() and ioc_entry["type"].lower() == "ip":
+                enriched["ioc_hits"].append({
+                    "ioc": ioc_entry["ioc"],
+                    "type": ioc_entry["type"],
+                    "description": ioc_entry["description"]
+                })
+                break
+
+    # Check for domain IOCs
+    found_domains = extract_domains(message.lower())
+    for domain in found_domains:
+        if domain in malicious_domains:
+            # Find the matching IOC entry for full details
+            for ioc_entry in ioc_list:
+                if ioc_entry["ioc"].lower() == domain and ioc_entry["type"].lower() == "domain":
+                    enriched["ioc_hits"].append({
+                        "ioc": ioc_entry["ioc"],
+                        "type": ioc_entry["type"],
+                        "description": ioc_entry["description"]
+                    })
+                    break
+
+    # Check for URL IOCs
+    found_urls = extract_urls(message.lower())
+    for url in found_urls:
+        if url in malicious_urls:
+            # Find the matching IOC entry for full details
+            for ioc_entry in ioc_list:
+                if ioc_entry["ioc"].lower() == url and ioc_entry["type"].lower() == "url":
+                    enriched["ioc_hits"].append({
+                        "ioc": ioc_entry["ioc"],
+                        "type": ioc_entry["type"],
+                        "description": ioc_entry["description"]
+                    })
+                    break
+
+    # Check for hash IOCs
+    found_hashes = extract_hashes(message.lower())
+    for hash_val in found_hashes:
+        if hash_val in malicious_hashes:
+            # Find the matching IOC entry for full details
+            for ioc_entry in ioc_list:
+                if ioc_entry["ioc"].lower() == hash_val and ioc_entry["type"].lower() == "hash":
+                    enriched["ioc_hits"].append({
+                        "ioc": ioc_entry["ioc"],
+                        "type": ioc_entry["type"],
+                        "description": ioc_entry["description"]
+                    })
+                    break
 
     # 3) GeoIP enrichment (always attach 'geoip' if requested)
     if geoip_enabled:
