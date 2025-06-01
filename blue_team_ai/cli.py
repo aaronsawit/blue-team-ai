@@ -97,16 +97,18 @@ def process_records(
     else:
         output_list = parsed
 
-    # 5) AI classification
+# 5) AI classification
     if do_ai:
         for r in output_list:
             try:
                 ai_result = ai_module.classify_record(r)
                 r["ai_label"] = ai_result.get("ai_label", "")
                 r["ai_score"] = ai_result.get("ai_score", 0.0)
+                r["threat_level"] = ai_result.get("threat_level", 0) 
             except Exception as e:
                 r["ai_label"] = "error"
                 r["ai_score"] = 0.0
+                r["threat_level"] = 0  
                 logging.debug("AI classification failed: %s", e)
 
     return output_list

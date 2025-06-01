@@ -36,18 +36,26 @@ def classify_record(record: Dict[str, Any]) -> Dict[str, Any]:
     Classify a log record's 'message' using DeepSeek (via OpenRouter).
     Now includes IOC context for accurate AI scoring.
     Returns a dict with keys:
-      - 'ai_label': the predicted label (e.g., 'anomaly' or 'normal')
+      - 'ai_label': the predicted label (e.g., 'malicious', 'anomalous', or 'normal')
       - 'ai_score': the confidence score (float)
+      - 'threat_level': numeric threat level (-1, 0, 1)
 
     If anything goes wrong (missing client, invalid response, etc.), returns
-    {'ai_label': '', 'ai_score': 0.0}.
+    {'ai_label': '', 'ai_score': 0.0, 'threat_level': 0}.
     """
     message = record.get("message", "")
     ioc_hits = record.get("ioc_hits", [])
     src_ip = record.get("src_ip", "")
     
+    # Define threat levels mapping
+    threat_levels = {
+        "malicious": -1,
+        "anomalous": 0, 
+        "normal": 1
+    }
+    
     if not message or client is None:
-        return {"ai_label": "", "ai_score": 0.0}
+        return {"ai_label": "", "ai_score": 0.0, "threat_level": 0}
 
     try:
         # Build context about IOC hits
@@ -69,30 +77,57 @@ def classify_record(record: Dict[str, Any]) -> Dict[str, Any]:
             "Consider: If there are IOC matches, this is definitely malicious. "
             "Failed logins, blocked connections = anomalous. "
             "Regular operations = normal.\n\n"
-            "Response format: Label: <malicious|anomalous|normal>, Score: <0.0-1.0>"
+            "Response format: Label: <malicious|anomalous|normal>, Confidence: <0.0-1.0>"
         )
 
         response = client.chat.completions.create(
-            model="deepseek/deepseek-chat:free",
+            model=model_name,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=25,
             temperature=0.0
         )
         
         content = response.choices[0].message.content.strip()
-        
-        # Parse response: "Label: malicious, Score: 0.95"
-        if "Label:" in content and "Score:" in content:
+
+        # Parse response: "Label: malicious, Confidence: 0.95"
+        if "Label:" in content and "Confidence:" in content:
             parts = content.split(",")
             label_part = parts[0].split("Label:")[1].strip()
-            score_part = parts[1].split("Score:")[1].strip()
+            score_part = parts[1].split("Confidence:")[1].strip()
+            
+            ai_label = label_part.lower()
+            ai_score = float(score_part)
+            threat_level = threat_levels.get(ai_label, 0)
             
             return {
-                "ai_label": label_part.lower(),
-                "ai_score": float(score_part)
+                "ai_label": ai_label,
+                "ai_score": ai_score,
+                "threat_level": threat_level
             }
             
     except Exception as e:
-        print(f"AI classification error: {e}")
+        # Handle rate limiting or other API errors
+        error_msg = str(e)
+        print(f"AI classification error: {error_msg}", file=sys.stderr)
+        
+        # Fallback: basic keyword-based classification when AI is unavailable
+        if ioc_hits:
+            result = {"ai_label": "malicious", "ai_score": 0.8, "threat_level": -1}
+            print(f"DEBUG: Returning result with IOC fallback: {result}", file=sys.stderr)
+            return result
+        elif any(word in message.lower() for word in ["attack", "exploit", "malware", "breach"]):
+            result = {"ai_label": "malicious", "ai_score": 0.7, "threat_level": -1}
+            print(f"DEBUG: Returning result with attack keywords: {result}", file=sys.stderr)
+            return result
+        elif any(word in message.lower() for word in ["failed", "blocked", "denied", "suspicious"]):
+            result = {"ai_label": "anomalous", "ai_score": 0.6, "threat_level": 0}
+            print(f"DEBUG: Returning result with anomaly keywords: {result}", file=sys.stderr)
+            return result
+        else:
+            result = {"ai_label": "normal", "ai_score": 0.5, "threat_level": 1}
+            print(f"DEBUG: Returning result with normal fallback: {result}", file=sys.stderr)
+            return result
     
-    return {"ai_label": "", "ai_score": 0.0}
+    result = {"ai_label": "", "ai_score": 0.0, "threat_level": 0}
+    print(f"DEBUG: Returning final fallback result: {result}", file=sys.stderr)
+    return result
