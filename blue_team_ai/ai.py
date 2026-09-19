@@ -3,8 +3,8 @@
 blue_team_ai/ai.py — AI classification using DeepSeek via OpenRouter.
 
 This module sends a chat completion request to OpenRouter's DeepSeek model
-(deepseek/deepseek-chat). It expects the environment variable DEEPSEEK_API_KEY
-to be set (your OpenRouter key). If the key is missing or invalid, or if the
+(deepseek/deepseek-chat). It reads your OpenRouter key from OPENROUTER_API_KEY
+(DEEPSEEK_API_KEY is still accepted). If the key is missing or invalid, or if the
 response structure is unexpected, this will fall back to {"ai_label":"", "ai_score":0.0}.
 """
 
@@ -15,9 +15,9 @@ from typing import Dict, Any
 try:
     from openai import OpenAI
 
-    key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    key = (os.environ.get("OPENROUTER_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or "").strip()
     if not key:
-        raise ValueError("DEEPSEEK_API_KEY not set")
+        raise ValueError("OPENROUTER_API_KEY not set; AI classification is disabled, rules still run")
 
     client = OpenAI(
         api_key=key,
@@ -113,21 +113,16 @@ def classify_record(record: Dict[str, Any]) -> Dict[str, Any]:
         # Fallback: basic keyword-based classification when AI is unavailable
         if ioc_hits:
             result = {"ai_label": "malicious", "ai_score": 0.8, "threat_level": -1}
-            print(f"DEBUG: Returning result with IOC fallback: {result}", file=sys.stderr)
             return result
         elif any(word in message.lower() for word in ["attack", "exploit", "malware", "breach"]):
             result = {"ai_label": "malicious", "ai_score": 0.7, "threat_level": -1}
-            print(f"DEBUG: Returning result with attack keywords: {result}", file=sys.stderr)
             return result
         elif any(word in message.lower() for word in ["failed", "blocked", "denied", "suspicious"]):
             result = {"ai_label": "anomalous", "ai_score": 0.6, "threat_level": 0}
-            print(f"DEBUG: Returning result with anomaly keywords: {result}", file=sys.stderr)
             return result
         else:
             result = {"ai_label": "normal", "ai_score": 0.5, "threat_level": 1}
-            print(f"DEBUG: Returning result with normal fallback: {result}", file=sys.stderr)
             return result
     
     result = {"ai_label": "", "ai_score": 0.0, "threat_level": 0}
-    print(f"DEBUG: Returning final fallback result: {result}", file=sys.stderr)
     return result
